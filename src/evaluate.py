@@ -4,6 +4,9 @@ import numpy as np
 from typing import Tuple
 from numpy.typing import NDArray
 import logging
+from pathlib import Path
+from glob import glob
+import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,12 +76,12 @@ class DocumentEvaluator:
         return text
 
 
-    def pipeline(self, ground_truth_path: str, predicted_path: str, params: dict = None) -> Tuple[str, str]:
+    def pipeline(self, ground_truth_path: str, image_path: str, params: list) -> Tuple[str, str]:
         """
         Generates and returns differend docs depending on params values
         """
         ground_truth_text = self.read_text_file(ground_truth_path)
-        predicted_text = self.read_text_file(predicted_path)
+        predicted_text = ocr.run(image_path, params)
 
         return ground_truth_text, predicted_text
 
@@ -117,11 +120,15 @@ class DocumentEvaluator:
         return wers, cers
 
 
-    def find_best_parameters(self, wers: list, cers: list, permutations: list) -> list:
+    def find_best_parameters(self) -> list:
         """
         Return the combination of paramters with the lowest CER and in the case of a tie
         With the lowest WER
         """
+        permutations = self.generate_grid()
+
+        wers, cers = self.evaluate_pair(permutations)
+        
         best_idxs = np.lexsort((wers, cers))
 
         return permutations[best_idxs[0]]
@@ -133,11 +140,27 @@ params = {'parameter_1': (0, 1, 0.2),
 
 evaluator = DocumentEvaluator(params)
 
-permutations = evaluator.generate_grid()
 
-wers, cers = evaluator.evaluate_pair(permutations)
-
-best_parameters = evaluator.find_best_parameters(wers, cers, permutations)
+best_parameters = evaluator.find_best_parameters()
 
 print(best_parameters)
 
+
+
+
+folder = Path('ocr_train_dataset')
+
+pair_text_image_path = []
+
+for dir in folder.iterdir():
+    texts = glob(f'{dir}/gt/main*[0-9][0-9][0-9].png.gpt.txt')
+    texts.sort(key= lambda x: int(re.findall(r'\d+', x)[-1]))
+
+    images = glob(f'{dir}/pngs/main*[0-9][0-9][0-9].png')
+    images.sort(key= lambda x: int(re.findall(r'\d+', x)[-1]))
+
+    pair_text_image_path.extend(list(zip(texts, images)))
+
+
+
+    

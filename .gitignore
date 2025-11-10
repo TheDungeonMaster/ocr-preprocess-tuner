@@ -1,3 +1,7 @@
+/test_data/
+/src/accuracy/test_data/
+/src/ocr/imgs/
+
 forte_valyutny_control
 
 evaluate_test.py

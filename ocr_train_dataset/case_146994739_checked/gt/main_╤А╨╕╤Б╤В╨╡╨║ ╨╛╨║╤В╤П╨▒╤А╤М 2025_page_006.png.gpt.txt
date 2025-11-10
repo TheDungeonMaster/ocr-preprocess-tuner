@@ -1,0 +1,31 @@
+```
+11. Validity period
+11.1 The term of this contract is until December 31, 2026 inclusive.
+11.2 The final consignee in the Republic of Kazakhstan is EMIR Pro LLP.
+Limited Liability Partnership "EMIR Pro"
+BIN 240240015965
+Address: RK. Shymkent, Enbekshinsky district,
+N.Torekulova str., 146, Kbe 17
+IIC: KZ7096516F0011578911 (YUAN) Branch of
+ForteBank JSC in Shymkent
+IRTYKZKA
+IIC: KZ6096516F0011578897 (USD) Branch of
+ForteBank JSC in Shymkent
+IRTYKZKA
+VAT Certificate Series 59001 No. 0011937 February 14,
+2024
+Director: Dosmetov Gulamzhan +77075091004
+Shandong Ristec Machinery Co., Ltd.
+Address: 306-23, Achievement Trans Service Center,
+Tongfa Avenue, Jinan, China.
+BENEFICIARY'S BANK NAME:
+Bank Name: CHINA CITIC BANK, JINAN BRANCH.
+SWIFT CODE: CIBKCNBJ250
+Bank Address: CITIC PLAZA CHINA CITIC BANK,
+FLOOR 3, 150 LUOYUAN STREET
+BENEFICIARY'S NAME AND ACCOUNT NO.:
+ACCOUNT NUMBER: 8112 5140 1320 1286 580
+NAME: Shandong Ristec Machinery Co., Ltd
+ADDRESS: 306-23, Achievement Trans Service Center,
+Tongfa Avenue, Jinan, China.
+```
