@@ -7,15 +7,18 @@ import logging
 from pathlib import Path
 from glob import glob
 import re
+from src.ocr.service import OCRService
+from src.ocr.tesseract_ocr import TesseractOCREngine
+from src.parser.service import ParserService
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("evaluation.log"),
-        logging.StreamHandler()
-    ]
-)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s [%(levelname)s] %(message)s",
+#     handlers=[
+#         logging.FileHandler("evaluation.log"),
+#         logging.StreamHandler()
+#     ]
+# )
 
 transform_word = jiwer.Compose([
     jiwer.ToLowerCase(),               # Convert to lowercase
@@ -58,30 +61,25 @@ class DocumentPair:
         return jiwer.cer(self.ground_truth, self.prediction, reference_transform=transform_character, hypothesis_transform=transform_character)
 
 
-class DocumentEvaluator:
-    def __init__(self, params):
+class DocumentPairsEvaluator:
+    def __init__(self, params: list, document_pair: tuple):
         self.params = params
-
-
-    def read_text_file(self, file_path: str) -> str:
-        """
-        Returns contents of files
-        """
-        try:
-            with open(file_path, 'r', encoding='utf-8') as file:
-                text = file.read().strip()
-        except Exception as e:
-            logging.error(f"Could not open the file with path: {file_path} with error {e}", exc_info=True)
-            return ''
-        return text
+        self.engine = TesseractOCREngine(lang="eng+kaz+rus")
+        self.service = OCRService(self.engine)
+        self.document_pair = document_pair
 
 
     def pipeline(self, ground_truth_path: str, image_path: str, params: list) -> Tuple[str, str]:
         """
         Generates and returns differend docs depending on params values
         """
-        ground_truth_text = self.read_text_file(ground_truth_path)
-        predicted_text = ocr.run(image_path, params)
+        with open(ground_truth_path, 'r', encoding='utf-8') as file:
+                ground_truth_text= file.read().strip()
+
+        with open(image_path, "rb") as f:
+            img_bytes = f.read()
+        
+        predicted_text = self.service.recognize(img_bytes, params)
 
         return ground_truth_text, predicted_text
 
@@ -109,13 +107,13 @@ class DocumentEvaluator:
         wers = []
         cers = []
         for i in range(len(permutations)):
-            ground_truth_text, predicted_text = self.pipeline(ground_truth_path_1, predicted_path_1, permutations[i])
+            ground_truth_text, predicted_text = self.pipeline(self.document_pair[0], self.document_pair[1], permutations[i])
             doc = DocumentPair(ground_truth_text, predicted_text)
             wer = doc.compute_wer()
             cer = doc.compute_cer()
             wers.append(round(wer, 2))
             cers.append(round(cer, 2))
-        logging.info(f"WERs: {wers}, CERs: {cers}")
+        # logging.info(f"WERs: {wers}, CERs: {cers}")
         
         return wers, cers
 
@@ -131,35 +129,52 @@ class DocumentEvaluator:
         
         best_idxs = np.lexsort((wers, cers))
 
+        # print(permutations)
+
         return permutations[best_idxs[0]]
 
 
-params = {'parameter_1': (0, 1, 0.2),
-          'parameter_2': (2, 3, 0.2),
+
+parser = ParserService()
+dataset_path = 'ocr_train_dataset'
+document_pairs = parser.parse(dataset_path)
+
+
+
+params = {'parameter_1': (0, 3, 1),
+          'parameter_2': (0, 13, 1),
           }
 
-evaluator = DocumentEvaluator(params)
+best_parameters = []
+i = 0
+for document_pair in document_pairs:
+    evaluator = DocumentPairsEvaluator(params, document_pair)
 
-
-best_parameters = evaluator.find_best_parameters()
-
+    best_parameters.append(evaluator.find_best_parameters())
+    if i == 5:
+        break
+    i += 1
 print(best_parameters)
 
 
 
+"""
+Tesseract Parameters:
+--oem: 1, 2, 3, 4 (engine types)
+--psm (page segmentation mode)
+tessedit_chat_whitelist
+tessedit_chat_blacklist
+load_system_dawg (if you have non-dictionaty words, disabe it)
+language_model_penalty_non_dict_words (penalty for non dictionary words)
+textord_mean_linesize (minimum line height used in text row detection)
+textord_noise_sizefraction
+edges_max_children_per_outline
+tessedit_pageseg_mode
 
-folder = Path('ocr_train_dataset')
+"""
 
-pair_text_image_path = []
 
-for dir in folder.iterdir():
-    texts = glob(f'{dir}/gt/main*[0-9][0-9][0-9].png.gpt.txt')
-    texts.sort(key= lambda x: int(re.findall(r'\d+', x)[-1]))
 
-    images = glob(f'{dir}/pngs/main*[0-9][0-9][0-9].png')
-    images.sort(key= lambda x: int(re.findall(r'\d+', x)[-1]))
-
-    pair_text_image_path.extend(list(zip(texts, images)))
 
 
 
