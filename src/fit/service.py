@@ -1,156 +1,213 @@
+# src/usecases/fit_image_usecase.py
 from __future__ import annotations
-
-from typing import Tuple, List, Dict, Any, Iterable
-
+from typing import Tuple, List, Dict, Any, Iterable, Optional
 from itertools import product
 from pathlib import Path
-
+import time
 import numpy as np
-from numpy.typing import NDArray
 
+from src.fit.reporter import Reporter, NoOpReporter
 from src.ocr.service import OCRService
 from src.ocr.tesseract_ocr import TesseractOCREngine
-
-# Updated paths to match the new structure using the dataclass + class-based service
-
-
 from src.parser.service import ParserService
 from src.evaluate import DocumentPair
+
 from src.preprocess.model import PreprocessConfig
 from src.preprocess.pillow_preprocesser import PillowImagePreprocessor
 from src.preprocess.service import PreprocessService
 
 
-def _expand_spec(values: Any) -> Iterable[Any]:
+def _expand_spec(values: Any):
     """
-    Expand a parameter spec into a concrete iterable of values.
+    Expands a single parameter specification into a list of concrete values.
 
-    Supported formats for each param:
-      - Numeric range: (min, max, step)  -> inclusive grid via np.linspace
-      - Discrete list: [v1, v2, ...]     -> used as-is (can include bools, None, tuples)
-      - Single value:  v                  -> wrapped as [v]
+    Supported formats:
+        - (min, max, step): numeric range → np.linspace(min, max, step)
+        - [v1, v2, ...]: discrete list of values
+        - single value: converted into [value]
     """
-    # (mn, mx, step) numeric range
     if isinstance(values, tuple) and len(values) == 3 and all(isinstance(x, (int, float)) for x in values):
         mn, mx, step = values
         if step <= 0:
             raise ValueError("Range step must be > 0")
         n_steps = int(round((mx - mn) / step)) + 1
         return np.linspace(mn, mx, n_steps)
-    # discrete list (including tuples / None / bools)
     if isinstance(values, list):
         return values
-    # single literal
     return [values]
 
 
 class FitImageUseCase:
-    def __init__(self):
-        pass
+    """
+    Orchestrates parameter search for optimal image preprocessing configuration.
 
+    Responsibilities:
+        - Iterates over parameter combinations (grid search)
+        - Runs preprocessing → OCR → evaluation
+        - Reports progress and best-performing configurations per image
+    """
+
+    def __init__(self, reporter: Optional[Reporter] = None):
+        """
+        Initialize the use case with an optional reporter.
+
+        Args:
+            reporter: Optional progress reporter (e.g. SimpleLoggerReporter).
+                      Defaults to a no-op reporter if not provided.
+        """
+        self.reporter: Reporter = reporter or NoOpReporter()
+
+    # -------------------------------------------------------------------------
+    # Core pipeline (single run)
+    # -------------------------------------------------------------------------
     def pipeline(self, ground_truth_path: str, image_path: str, param_map: Dict[str, Any]) -> Tuple[str, str]:
         """
-        Runs preprocess -> OCR for a single (gt, image) pair using a param map
-        compatible with PreprocessConfig(**param_map).
-        Returns (ground_truth_text, predicted_text).
+        Executes the full pipeline for a single parameter set:
+        1. Load ground truth
+        2. Preprocess the image with specified parameters
+        3. Run OCR
+        4. Return (ground_truth_text, predicted_text)
         """
-        # 1) Read GT
+        # --- Load reference text (ground truth) ---
         with open(ground_truth_path, "r", encoding="utf-8") as file:
             ground_truth_text = file.read().strip()
 
-        # 2) Build config (dataclass validates all fields)
-        #    param_map may omit fields; PreprocessConfig will use defaults.
+        # --- Build validated config ---
         config = PreprocessConfig(**param_map)
 
-        # 3) Preprocess
+        # --- Run preprocessing ---
         preprocessor_service = PreprocessService(PillowImagePreprocessor)
         with open(image_path, "rb") as f:
             raw_bytes = f.read()
         processed_img_bytes = preprocessor_service.run(raw_bytes, config)
 
-        # 4) OCR
+        # --- Perform OCR ---
         engine = TesseractOCREngine(lang="eng+kaz+rus")
         ocr_service = OCRService(engine)
         predicted_text = ocr_service.recognize(processed_img_bytes)
 
         return ground_truth_text, predicted_text
 
+    # -------------------------------------------------------------------------
+    # Grid generation
+    # -------------------------------------------------------------------------
     def generate_grid(self, params_spec: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Builds a full Cartesian product grid from a param spec.
+        Builds a Cartesian product of parameter combinations.
 
-        params_spec: dict like
-          {
-            "contrast": (0.9, 1.5, 0.2),
-            "denoise": [False, True],
-            "denoise_strength": [10, 15, 20],
-            "denoise_template_window_size": [3, 5, 7],   # odd ints >=3
-            "deskew": [False, True],
-            "upscale_factor": [None, 1.5, 2.0],          # Optional
-            "use_clahe": [False, True],
-            "clahe_clip_limit": (1.0, 3.0, 1.0),
-            "clahe_tile_grid_size": [(8, 8), (12, 12)],  # tuple choices
-          }
+        Args:
+            params_spec: dictionary mapping parameter name → values, ranges, or lists
 
-        Returns: list of dicts mapping param name -> value for each combination.
+        Example:
+            {
+                "contrast": (0.9, 1.5, 0.2),
+                "denoise": [False, True],
+                "upscale_factor": [None, 1.5, 2.0]
+            }
+
+        Returns:
+            List of parameter dictionaries (one per combination).
         """
         keys = list(params_spec.keys())
         value_lists: List[Iterable[Any]] = [list(_expand_spec(params_spec[k])) for k in keys]
+        return [{k: v for k, v in zip(keys, combo)} for combo in product(*value_lists)]
 
-        grid: List[Dict[str, Any]] = []
-        for combo in product(*value_lists):
-            combo_map = {k: v for k, v in zip(keys, combo)}
-            grid.append(combo_map)
-        return grid
-
-    def evaluate_pair(self, grid: List[Dict[str, Any]], document_pair: List[str]) -> Tuple[List[float], List[float]]:
+    # -------------------------------------------------------------------------
+    # Evaluation (single image)
+    # -------------------------------------------------------------------------
+    def evaluate_pair(self, grid: List[Dict[str, Any]], document_pair: List[str], image_name: str) -> Tuple[List[float], List[float]]:
         """
-        Calculates WER and CER for a single (gt_path, image_path) pair across the grid.
-        document_pair: [ground_truth_path, image_path]
-        Returns (wers, cers) aligned to grid order.
+        Evaluates all parameter combinations for one image.
+
+        Args:
+            grid: list of parameter dictionaries
+            document_pair: [ground_truth_path, image_path]
+            image_name: human-readable image identifier (for reporting)
+
+        Returns:
+            Two lists (WERs, CERs), aligned to grid order.
         """
         gt_path, img_path = document_pair[0], document_pair[1]
         wers: List[float] = []
         cers: List[float] = []
+        n_combos = len(grid)
 
-        for param_map in grid:
-            ground_truth_text, predicted_text = self.pipeline(gt_path, img_path, param_map)
-            doc = DocumentPair(ground_truth_text, predicted_text)
-            wer = doc.compute_wer()
-            cer = doc.compute_cer()
-            wers.append(round(wer, 4))
-            cers.append(round(cer, 4))
+        # Notify reporter before starting image evaluation
+        self.reporter.on_image_start(image_name, n_combos)
+
+        for idx, param_map in enumerate(grid, start=1):
+            t0 = time.perf_counter()
+
+            # --- Run pipeline with current params ---
+            gt_text, pred_text = self.pipeline(gt_path, img_path, param_map)
+
+            # --- Evaluate performance ---
+            doc = DocumentPair(gt_text, pred_text)
+            wer = float(doc.compute_wer())
+            cer = float(doc.compute_cer())
+            dt = time.perf_counter() - t0
+
+            # --- Record and report ---
+            wers.append(round(wer, 6))
+            cers.append(round(cer, 6))
+            self.reporter.on_run_result(image_name, idx, n_combos, param_map, wer, cer, dt)
 
         return wers, cers
 
-    def fit(self, dataset_path: str, params_spec: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    # -------------------------------------------------------------------------
+    # Fit procedure (dataset-level)
+    # -------------------------------------------------------------------------
+    def fit(self, dataset_path: str, params_spec: Dict[str, Any], limit: Optional[int] = None) -> List[Tuple[str, Dict[str, Any]]]:
         """
-        For each parsed (gt, image) pair, searches the grid and returns the best params per image.
-        Primary sort: CER, secondary tie-breaker: WER.
-        Returns a list of (image_path, best_param_map).
+        Executes a full grid search over preprocessing parameters.
+
+        Workflow:
+            1. Parse dataset into (ground_truth, image) pairs
+            2. Build parameter grid
+            3. Evaluate each image for all combinations
+            4. Select the best-performing config per image
+
+        Args:
+            dataset_path: path to dataset root (parsed by ParserService)
+            params_spec: parameter specification dict
+            limit: optional limit on number of document pairs to process
+
+        Returns:
+            List of tuples: (image_path, best_param_dict)
         """
+        # --- Step 1: Parse dataset ---
         parser = ParserService()
         document_pairs = parser.parse(dataset_path)
+        if limit is not None:
+            document_pairs = document_pairs[:limit]
 
+        # Report parsed images
+        images = [dp[1] for dp in document_pairs]
+        self.reporter.on_parsed(images)
+
+        # --- Step 2: Generate parameter grid ---
         grid = self.generate_grid(params_spec)
+        total_runs = len(grid) * max(len(document_pairs), 1)
+        self.reporter.on_grid_built(len(grid), total_runs)
 
-        image_and_best_parameters: List[Tuple[str, Dict[str, Any]]] = []
+        # --- Step 3: Run evaluations ---
+        results: List[Tuple[str, Dict[str, Any]]] = []
+        for document_pair in document_pairs:
+            image_path = document_pair[1]
+            image_name = Path(image_path).name
 
-        # Example keeps only first item as in your original code (i == 1 break):
-        # Remove the early-break if you want to process all pairs.
-        for i, document_pair in enumerate(document_pairs):
-            if i == 1:
-                break
+            wers, cers = self.evaluate_pair(grid, document_pair, image_name)
 
-            wers, cers = self.evaluate_pair(grid, document_pair)
-
-            # lexsort uses last key as primary, so (wers, cers) -> CER primary, WER secondary
+            # --- Step 4: Select best configuration (lowest CER → WER) ---
             order = np.lexsort((np.array(wers), np.array(cers)))
             best_idx = int(order[0])
-
-            image_path = document_pair[1]
             best_params = grid[best_idx]
+            best_wer = float(wers[best_idx])
+            best_cer = float(cers[best_idx])
 
-            image_and_best_parameters.append((image_path, best_params))
+            self.reporter.on_image_best(image_path, best_params, best_wer, best_cer)
+            results.append((image_path, best_params))
 
-        return image_and_best_parameters
+        # Notify completion
+        self.reporter.on_finish()
+        return results
