@@ -1,6 +1,7 @@
 from typing import Tuple, List
 from pathlib import Path
 from glob import glob
+import re
 
 
 class ParserService:
@@ -23,3 +24,4 @@ class ParserService:
         return document_pairs
 
 
+ 

@@ -31,13 +31,13 @@ class OCRService:
             except Exception:
                 pass
 
-    def recognize(self, image_bytes: bytes, params: list) -> str:
+    def recognize(self, image_bytes: bytes) -> str:
         """
         Do OCR on a single image (bytes) and return text.
         Errors are logged and result is an empty string.
         """
         try:
-            return self.engine.recognize(image_bytes, params)
+            return self.engine.recognize(image_bytes)
         except Exception as e:
             logger.error(f"OCRService.recognize failed: {e}")
             return ""

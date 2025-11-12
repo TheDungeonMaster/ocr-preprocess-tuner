@@ -36,12 +36,6 @@ transform_character = jiwer.Compose([
 ])
 
 
-ground_truth_path_1 = "docs/doc1/Contract_AEOMPI25.txt"
-predicted_path_1 = "docs/doc1/AEOMPI25_signed_by_2_parts[1]_p001.txt"
-
-ground_truth_path_2 = "docs/doc2/Contract_AEOMPI25_part2.txt"
-predicted_path_2 = "docs/doc2/AEOMPI25_signed_by_2_parts[1]_p002.txt"
-
 
 class DocumentPair:
     def __init__(self, ground_truth: str, prediction: str):
@@ -78,6 +72,8 @@ class DocumentPairsEvaluator:
 
         with open(image_path, "rb") as f:
             img_bytes = f.read()
+
+        img_bytes_new = preprocessor(img, params)
         
         predicted_text = self.service.recognize(img_bytes, params)
 
@@ -135,46 +131,26 @@ class DocumentPairsEvaluator:
 
 
 
-parser = ParserService()
-dataset_path = 'ocr_train_dataset'
-document_pairs = parser.parse(dataset_path)
+# parser = ParserService()
+# dataset_path = 'ocr_train_dataset'
+# document_pairs = parser.parse(dataset_path)
 
 
 
-params = {'parameter_1': (0, 3, 1),
-          'parameter_2': (0, 13, 1),
-          }
+# params = {'parameter_1': (0, 3, 1),
+#           'parameter_2': (0, 13, 1),
+#           }
 
-best_parameters = []
-i = 0
-for document_pair in document_pairs:
-    evaluator = DocumentPairsEvaluator(params, document_pair)
+# best_parameters = []
+# i = 0
+# for document_pair in document_pairs:
+#     evaluator = DocumentPairsEvaluator(params, document_pair)
 
-    best_parameters.append(evaluator.find_best_parameters())
-    if i == 5:
-        break
-    i += 1
-print(best_parameters)
-
-
-
-"""
-Tesseract Parameters:
---oem: 1, 2, 3, 4 (engine types)
---psm (page segmentation mode)
-tessedit_chat_whitelist
-tessedit_chat_blacklist
-load_system_dawg (if you have non-dictionaty words, disabe it)
-language_model_penalty_non_dict_words (penalty for non dictionary words)
-textord_mean_linesize (minimum line height used in text row detection)
-textord_noise_sizefraction
-edges_max_children_per_outline
-tessedit_pageseg_mode
-
-"""
-
-
-
+#     best_parameters.append(evaluator.find_best_parameters())
+#     if i == 5:
+#         break
+#     i += 1
+# print(best_parameters)
 
 
 

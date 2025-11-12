@@ -24,7 +24,7 @@ class TesseractOCREngine:
         self.lang = lang
         logger.info(f"TesseractOCREngine initialized with lang={self.lang}")
 
-    def recognize(self, image_bytes: bytes, params: list) -> str:
+    def recognize(self, image_bytes: bytes) -> str:
         """
         Run OCR and return text only (line-broken).
         """
@@ -35,13 +35,9 @@ class TesseractOCREngine:
             if image is None:
                 raise ValueError("Failed to decode image from bytes")
             
-            #cusotm config for changing parameters
-            oem = int(params[0])
-            psm = int(params[1])
-            custom_config = rf"--oem {oem} --psm {psm}" # oem is one of {0, 1, 2, 3} and psm is one of [0, 13]
-
+       
             # Word-level data
-            data = pytesseract.image_to_data(image, config=custom_config, output_type=Output.DICT, lang=self.lang)
+            data = pytesseract.image_to_data(image,  output_type=Output.DICT, lang=self.lang)
 
 
 
