@@ -2,8 +2,4 @@
 /src/accuracy/test_data/
 /src/ocr/imgs/
 /src/preprocess/imgs/
-
-forte_valyutny_control
-
-evaluate_test.py
-
+/src/wer_cer/test_data/
