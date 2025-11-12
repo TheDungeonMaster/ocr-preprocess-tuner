@@ -20,16 +20,16 @@ class PillowImagePreprocessor:
     def __init__(
         self,
         *,
-        contrast: float = 1.5,
-        denoise: bool = True,
-        denoise_strength: int = 13,
-        denoise_template_window_size: int = 7,
+        contrast: float,
+        denoise: bool,
+        denoise_strength: int,
+        denoise_template_window_size: int,
         deskew: bool = False,
-        upscale_factor: Optional[float] = 2.5,
+        upscale_factor: Optional[float],
         # Optional: CLAHE
         use_clahe: bool = False,
-        clahe_clip_limit: float = 2.0,
-        clahe_tile_grid_size: Tuple[int, int] = (8, 8),
+        clahe_clip_limit: float ,
+        clahe_tile_grid_size: Tuple[int, int],
     ):
         self.contrast = contrast
         self.denoise = denoise
